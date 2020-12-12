@@ -21,7 +21,7 @@ use librespot_core::authentication::Credentials;
 use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
 use librespot_core::spotify_id::SpotifyId;
-use librespot_metadata::{Artist, FileFormat, Metadata, Track, Album};
+use librespot_metadata::{FileFormat, Metadata, Episode, Show, Track, Artist, Album};
 use regex::Regex;
 use scoped_threadpool::Pool;
 use tokio_core::reactor::Core;
@@ -44,21 +44,29 @@ fn main() {
 
     let mut threadpool = Pool::new(1);
 
-    let spotify_uri = Regex::new(r"spotify:track:([[:alnum:]]+)").unwrap();
-    let spotify_url = Regex::new(r"open\.spotify\.com/track/([[:alnum:]]+)").unwrap();
+    let spotify_track_uri = Regex::new(r"spotify:track:([[:alnum:]]+)").unwrap();
+    let spotify_track_url = Regex::new(r"open\.spotify\.com/track/([[:alnum:]]+)").unwrap();
+    let spotify_episode_uri = Regex::new(r"spotify:episode:([[:alnum:]]+)").unwrap();
+    let spotify_episode_url = Regex::new(r"open\.spotify\.com/episode/([[:alnum:]]+)").unwrap();
 
     io::stdin().lock().lines()
         .filter_map(|line|
             line.ok().and_then(|str|
-                spotify_uri.captures(&str).or(spotify_url.captures(&str))
-                    .or_else(|| { warn!("Cannot parse track from string {}", str); None })
-                    .and_then(|capture|SpotifyId::from_base62(&capture[1]).ok())))
-        .for_each(|id|{
-            info!("Getting track {}...", id.to_base62());
-            let mut track = core.run(Track::get(&session, id)).expect("Cannot get track metadata");
+                {
+                    spotify_track_uri.captures(&str).or(spotify_track_url.captures(&str)).or(spotify_episode_uri.captures(&str)).or(spotify_episode_url.captures(&str))
+                        .or_else(|| {
+                            warn!("Cannot parse track/episode from string {}", str);
+                            None
+                        })
+                        .and_then(|capture| SpotifyId::from_base62(&capture[1]).ok())
+                })).for_each(|id| {
+        info!("Getting track {}...", id.to_base62());
+        let track_result = core.run(Track::get(&session, id));
+        if track_result.is_ok() {
+            let mut track = track_result.unwrap();
             if !track.available {
                 warn!("Track {} is not available, finding alternative...", id.to_base62());
-                let alt_track = track.alternatives.iter().find_map(|id|{
+                let alt_track = track.alternatives.iter().find_map(|id| {
                     let alt_track = core.run(Track::get(&session, *id)).expect("Cannot get track metadata");
                     match alt_track.available {
                         true => Some(alt_track),
@@ -68,19 +76,19 @@ fn main() {
                 track = alt_track.expect(&format!("Could not find alternative for track {}", id.to_base62()));
                 warn!("Found track alternative {} -> {}", id.to_base62(), track.id.to_base62());
             }
-            let artists_strs: Vec<_> = track.artists.iter().map(|id|core.run(Artist::get(&session, *id)).expect("Cannot get artist metadata").name).collect();
-            debug!("File formats: {}", track.files.keys().map(|filetype|format!("{:?}", filetype)).collect::<Vec<_>>().join(" "));
+            let artists_strs: Vec<_> = track.artists.iter().map(|id| core.run(Artist::get(&session, *id)).expect("Cannot get artist metadata").name).collect();
+            debug!("File formats: {}", track.files.keys().map(|filetype| format!("{:?}", filetype)).collect::<Vec<_>>().join(" "));
             let file_id = track.files.get(&FileFormat::OGG_VORBIS_320)
                 .or(track.files.get(&FileFormat::OGG_VORBIS_160))
                 .or(track.files.get(&FileFormat::OGG_VORBIS_96))
                 .expect("Could not find a OGG_VORBIS format for the track.");
             let key = core.run(session.audio_key().request(track.id, *file_id)).expect("Cannot get audio key");
-            let mut encrypted_file = core.run(AudioFile::open(&session, *file_id)).unwrap();
+            let mut encrypted_file = core.run(AudioFile::open(&session, *file_id, 320, true)).unwrap();
             let mut buffer = Vec::new();
             let mut read_all: Result<usize> = Ok(0);
             let fetched = AtomicBool::new(false);
-            threadpool.scoped(|scope|{
-                scope.execute(||{
+            threadpool.scoped(|scope| {
+                scope.execute(|| {
                     read_all = encrypted_file.read_to_end(&mut buffer);
                     fetched.store(true, Ordering::Release);
                 });
@@ -105,5 +113,54 @@ fn main() {
                 pipe.write_all(&decrypted_buffer[0xa7..]).expect("Failed to write to stdin");
                 assert!(child.wait().expect("Out of ideas for error messages").success(), "Helper script returned an error");
             }
-        });
+        } else {
+            warn!("Could not retrieve track {}, trying episode...", id.to_base62());
+            info!("Getting episode {}...", id.to_base62());
+            let episode_result = core.run(Episode::get(&session, id));
+            if episode_result.is_ok() {
+                let episode = episode_result.unwrap();
+                if !episode.available {
+                    warn!("Episode {} is not available.", id.to_base62());
+                }
+                let show = core.run(Show::get(&session, episode.show)).expect("Cannot get show");
+                debug!("File formats: {}", episode.files.keys().map(|filetype| format!("{:?}", filetype)).collect::<Vec<_>>().join(" "));
+                let file_id = episode.files.get(&FileFormat::OGG_VORBIS_320)
+                    .or(episode.files.get(&FileFormat::OGG_VORBIS_160))
+                    .or(episode.files.get(&FileFormat::OGG_VORBIS_96))
+                    .expect("Could not find a OGG_VORBIS format for the episode.");
+                let key = core.run(session.audio_key().request(episode.id, *file_id)).expect("Cannot get audio key");
+                let mut encrypted_file = core.run(AudioFile::open(&session, *file_id, 320, true)).unwrap();
+                let mut buffer = Vec::new();
+                let mut read_all: Result<usize> = Ok(0);
+                let fetched = AtomicBool::new(false);
+                threadpool.scoped(|scope| {
+                    scope.execute(|| {
+                        read_all = encrypted_file.read_to_end(&mut buffer);
+                        fetched.store(true, Ordering::Release);
+                    });
+                    while !fetched.load(Ordering::Acquire) {
+                        core.turn(Some(Duration::from_millis(100)));
+                    }
+                });
+                read_all.expect("Cannot read file stream");
+                let mut decrypted_buffer = Vec::new();
+                AudioDecrypt::new(key, &buffer[..]).read_to_end(&mut decrypted_buffer).expect("Cannot decrypt stream");
+                if args.len() == 3 {
+                    let fname = format!("{} - {}.ogg", show.name, episode.name);
+                    std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted episode");
+                    info!("Filename: {}", fname);
+                } else {
+                    let mut cmd = Command::new(args[3].to_owned());
+                    cmd.stdin(Stdio::piped());
+                    cmd.arg(id.to_base62()).arg(episode.name).arg(show.name).arg(show.publisher);
+                    let mut child = cmd.spawn().expect("Could not run helper program");
+                    let pipe = child.stdin.as_mut().expect("Could not open helper stdin");
+                    pipe.write_all(&decrypted_buffer[0xa7..]).expect("Failed to write to stdin");
+                    assert!(child.wait().expect("Out of ideas for error messages").success(), "Helper script returned an error");
+                }
+            } else {
+                warn!("Could not retrieve episode {}", id.to_base62());
+            }
+        }
+    });
 }
