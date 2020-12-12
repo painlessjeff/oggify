@@ -87,36 +87,41 @@ fn main() {
             let mut encrypted_file = core.run(AudioFile::open(&session, *file_id, 320, true)).unwrap();
             let mut buffer = Vec::new();
             let mut read_all: Result<usize> = Ok(0);
-            let fetched = AtomicBool::new(false);
-            threadpool.scoped(|scope| {
-                scope.execute(|| {
-                    read_all = encrypted_file.read_to_end(&mut buffer);
-                    fetched.store(true, Ordering::Release);
-                });
-                while !fetched.load(Ordering::Acquire) {
-                    core.turn(Some(Duration::from_millis(100)));
-                }
-            });
-            read_all.expect("Cannot read file stream");
-            let mut decrypted_buffer = Vec::new();
-            AudioDecrypt::new(key, &buffer[..]).read_to_end(&mut decrypted_buffer).expect("Cannot decrypt stream");
-            if args.len() == 3 {
-                let fname = format!("{} - {}.ogg", artists_strs.join(", "), track.name);
-                if Path::new(fname).exists() {
-                    info!("File {} exists.", fname);
-                } else {
-                    std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted track");
-                    info!("Filename: {}", fname);
-                }    
+            let fname = format!("{} - {}.ogg", artists_strs.join(", "), track.name);
+            if Path::new(&fname).exists() {
+                info!("File {} already exists.", fname);
             } else {
-                let album = core.run(Album::get(&session, track.album)).expect("Cannot get album metadata");
-                let mut cmd = Command::new(args[3].to_owned());
-                cmd.stdin(Stdio::piped());
-                cmd.arg(id.to_base62()).arg(track.name).arg(album.name).args(artists_strs.iter());
-                let mut child = cmd.spawn().expect("Could not run helper program");
-                let pipe = child.stdin.as_mut().expect("Could not open helper stdin");
-                pipe.write_all(&decrypted_buffer[0xa7..]).expect("Failed to write to stdin");
-                assert!(child.wait().expect("Out of ideas for error messages").success(), "Helper script returned an error");
+                let fetched = AtomicBool::new(false);
+                threadpool.scoped(|scope| {
+                    scope.execute(|| {
+                        read_all = encrypted_file.read_to_end(&mut buffer);
+                        fetched.store(true, Ordering::Release);
+                    });
+                    while !fetched.load(Ordering::Acquire) {
+                        core.turn(Some(Duration::from_millis(100)));
+                    }
+                });
+                read_all.expect("Cannot read file stream");
+                let mut decrypted_buffer = Vec::new();
+                AudioDecrypt::new(key, &buffer[..]).read_to_end(&mut decrypted_buffer).expect("Cannot decrypt stream");
+                if args.len() == 3 {
+                    let fname = format!("{} - {}.ogg", artists_strs.join(", "), track.name);
+                    if Path::new(&fname).exists() {
+                        info!("File {} already exists.", fname);
+                    } else {
+                        std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted track");
+                        info!("Filename: {}", fname);
+                    }
+                } else {
+                    let album = core.run(Album::get(&session, track.album)).expect("Cannot get album metadata");
+                    let mut cmd = Command::new(args[3].to_owned());
+                    cmd.stdin(Stdio::piped());
+                    cmd.arg(id.to_base62()).arg(track.name).arg(album.name).args(artists_strs.iter());
+                    let mut child = cmd.spawn().expect("Could not run helper program");
+                    let pipe = child.stdin.as_mut().expect("Could not open helper stdin");
+                    pipe.write_all(&decrypted_buffer[0xa7..]).expect("Failed to write to stdin");
+                    assert!(child.wait().expect("Out of ideas for error messages").success(), "Helper script returned an error");
+                }
             }
         } else {
             warn!("Could not retrieve track {}, trying episode...", id.to_base62());
@@ -137,35 +142,39 @@ fn main() {
                 let mut encrypted_file = core.run(AudioFile::open(&session, *file_id, 320, true)).unwrap();
                 let mut buffer = Vec::new();
                 let mut read_all: Result<usize> = Ok(0);
-                let fetched = AtomicBool::new(false);
-                threadpool.scoped(|scope| {
-                    scope.execute(|| {
-                        read_all = encrypted_file.read_to_end(&mut buffer);
-                        fetched.store(true, Ordering::Release);
-                    });
-                    while !fetched.load(Ordering::Acquire) {
-                        core.turn(Some(Duration::from_millis(100)));
-                    }
-                });
-                read_all.expect("Cannot read file stream");
-                let mut decrypted_buffer = Vec::new();
-                AudioDecrypt::new(key, &buffer[..]).read_to_end(&mut decrypted_buffer).expect("Cannot decrypt stream");
-                if args.len() == 3 {
-                    let fname = format!("{} - {}.ogg", show.name, episode.name);
-                    if Path::new(fname).exists() {
-                        info!("File {} exists.", fname);
-                    } else {
-                        std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted episode");
-                        info!("Filename: {}", fname);
-                    }
+                let fname = format!("{} - {}.ogg", show.name, episode.name);
+                if Path::new(&fname).exists() {
+                    info!("File {} already exists.", fname);
                 } else {
-                    let mut cmd = Command::new(args[3].to_owned());
-                    cmd.stdin(Stdio::piped());
-                    cmd.arg(id.to_base62()).arg(episode.name).arg(show.name).arg(show.publisher);
-                    let mut child = cmd.spawn().expect("Could not run helper program");
-                    let pipe = child.stdin.as_mut().expect("Could not open helper stdin");
-                    pipe.write_all(&decrypted_buffer[0xa7..]).expect("Failed to write to stdin");
-                    assert!(child.wait().expect("Out of ideas for error messages").success(), "Helper script returned an error");
+                    let fetched = AtomicBool::new(false);
+                    threadpool.scoped(|scope| {
+                        scope.execute(|| {
+                            read_all = encrypted_file.read_to_end(&mut buffer);
+                            fetched.store(true, Ordering::Release);
+                        });
+                        while !fetched.load(Ordering::Acquire) {
+                            core.turn(Some(Duration::from_millis(100)));
+                        }
+                    });
+                    read_all.expect("Cannot read file stream");
+                    let mut decrypted_buffer = Vec::new();
+                    AudioDecrypt::new(key, &buffer[..]).read_to_end(&mut decrypted_buffer).expect("Cannot decrypt stream");
+                    if args.len() == 3 {
+                        if Path::new(&fname).exists() {
+                            info!("File {} already exists.", fname);
+                        } else {
+                            std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted episode");
+                            info!("Filename: {}", fname);
+                        }
+                    } else {
+                        let mut cmd = Command::new(args[3].to_owned());
+                        cmd.stdin(Stdio::piped());
+                        cmd.arg(id.to_base62()).arg(episode.name).arg(show.name).arg(show.publisher);
+                        let mut child = cmd.spawn().expect("Could not run helper program");
+                        let pipe = child.stdin.as_mut().expect("Could not open helper stdin");
+                        pipe.write_all(&decrypted_buffer[0xa7..]).expect("Failed to write to stdin");
+                        assert!(child.wait().expect("Out of ideas for error messages").success(), "Helper script returned an error");
+                    }
                 }
             } else {
                 warn!("Could not retrieve episode {}", id.to_base62());
