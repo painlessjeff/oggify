@@ -11,6 +11,7 @@ extern crate tokio_core;
 use std::env;
 use std::io::{self, BufRead, Read, Result};
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -101,8 +102,12 @@ fn main() {
             AudioDecrypt::new(key, &buffer[..]).read_to_end(&mut decrypted_buffer).expect("Cannot decrypt stream");
             if args.len() == 3 {
                 let fname = format!("{} - {}.ogg", artists_strs.join(", "), track.name);
-                std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted track");
-                info!("Filename: {}", fname);
+                if Path::new(fname).exists() {
+                    info!("File {} exists.", fname);
+                } else {
+                    std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted track");
+                    info!("Filename: {}", fname);
+                }    
             } else {
                 let album = core.run(Album::get(&session, track.album)).expect("Cannot get album metadata");
                 let mut cmd = Command::new(args[3].to_owned());
@@ -147,8 +152,12 @@ fn main() {
                 AudioDecrypt::new(key, &buffer[..]).read_to_end(&mut decrypted_buffer).expect("Cannot decrypt stream");
                 if args.len() == 3 {
                     let fname = format!("{} - {}.ogg", show.name, episode.name);
-                    std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted episode");
-                    info!("Filename: {}", fname);
+                    if Path::new(fname).exists() {
+                        info!("File {} exists.", fname);
+                    } else {
+                        std::fs::write(&fname, &decrypted_buffer[0xa7..]).expect("Cannot write decrypted episode");
+                        info!("Filename: {}", fname);
+                    }
                 } else {
                     let mut cmd = Command::new(args[3].to_owned());
                     cmd.stdin(Stdio::piped());
