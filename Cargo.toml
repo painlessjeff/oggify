@@ -11,9 +11,9 @@ readme = "README.md"
 
 [dependencies]
 tokio-core = "0.1.17"
-librespot-core = { git = "https://github.com/librespot-org/librespot.git", rev="89cafd7c86cd62ca0666a9a3d94eeb50fa51a16e" }
-librespot-metadata = { git = "https://github.com/librespot-org/librespot.git", rev="89cafd7c86cd62ca0666a9a3d94eeb50fa51a16e" }
-librespot-audio = { git = "https://github.com/librespot-org/librespot.git", rev="89cafd7c86cd62ca0666a9a3d94eeb50fa51a16e" }
+librespot-core = { git = "https://github.com/librespot-org/librespot.git", rev="0adb8516a65f551211a9ce78c2d822b85454546c" }
+librespot-metadata = { git = "https://github.com/librespot-org/librespot.git", rev="0adb8516a65f551211a9ce78c2d822b85454546c" }
+librespot-audio = { git = "https://github.com/librespot-org/librespot.git", rev="0adb8516a65f551211a9ce78c2d822b85454546c" }
 regex = "1.1.0"
 log = "0.4.6"
 env_logger = "0.6.0"
