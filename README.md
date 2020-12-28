@@ -1,7 +1,7 @@
 # oggify
 Download Spotify tracks to Ogg Vorbis (with a premium account).
 
-This library uses [librespot](https://github.com/librespot-org/librespot),
+This program uses [librespot](https://github.com/librespot-org/librespot),
 and as such, requires a Spotify Premium account to use.
 It supports downloading single tracks and episodes, but also entire playlists, albums and shows.
 
