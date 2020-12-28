@@ -116,10 +116,6 @@ fn main() {
         }
     }
 
-    for (id, _) in &ids {
-        info!("{}", id.to_base62());
-    }
-
     for (id, value) in ids {
         match value {
             "track" => {
